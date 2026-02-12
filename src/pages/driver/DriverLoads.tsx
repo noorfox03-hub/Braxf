@@ -1,154 +1,105 @@
-import { useEffect, useState } from 'react';
-import { useTranslation } from 'react-i18next';
-import { useAuth } from '@/hooks/useAuth';
-import { api } from '@/services/api';
-import AppLayout from '@/components/AppLayout';
-import { Card, CardContent } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
-import { toast } from 'sonner';
-import { MapPin, Weight, DollarSign, Loader2, Search } from 'lucide-react';
-import { Load } from '@/types';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
+// src/services/api.ts (جزء من الملف)
 
-const statusColors: Record<string, string> = {
-  available: 'bg-accent/10 text-accent border-accent/20',
-  pending: 'bg-secondary/10 text-secondary border-secondary/20',
-  in_progress: 'bg-primary/10 text-primary border-primary/20',
-  completed: 'bg-accent/10 text-accent border-accent/20',
-  cancelled: 'bg-destructive/10 text-destructive border-destructive/20',
-};
+// ... (الدوال السابقة مثل registerUser, verifyEmailOtp, loginByEmail تبقى كما هي)
 
-export default function DriverLoads() {
-  const { t } = useTranslation();
-  const { userProfile } = useAuth();
-  const [loads, setLoads] = useState<Load[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
-  const [bidLoadId, setBidLoadId] = useState<string | null>(null);
-  const [bidPrice, setBidPrice] = useState('');
-  const [bidMsg, setBidMsg] = useState('');
-  const [submitting, setSubmitting] = useState(false);
+  // ==========================================
+  // Loads (تعديل استعلامات الشحنات)
+  // ==========================================
+  async postLoad(loadData: any, userId: string) {
+    const { error } = await supabase.from('loads').insert([{
+      owner_id: userId, origin: loadData.origin, destination: loadData.destination,
+      weight: parseFloat(loadData.weight) || 0, price: parseFloat(loadData.price) || 0,
+      truck_size: loadData.truck_size, body_type: loadData.body_type,
+      description: loadData.description || '', type: loadData.type || 'general',
+      package_type: loadData.package_type, pickup_date: loadData.pickup_date,
+      receiver_name: loadData.receiver_name, receiver_phone: loadData.receiver_phone,
+      receiver_address: loadData.receiver_address, status: 'available',
+    }]);
+    if (error) throw error;
+  },
 
-  const fetchLoads = async () => {
-    try {
-      const data = await api.getAvailableLoads();
-      setLoads(data as Load[]);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
+  // هذا التعديل سيظهر اسم الشاحن للسائق
+  async getAvailableLoads() {
+    // نستخدم profiles:owner_id لربط الجدول بناءً على owner_id
+    const { data, error } = await supabase
+      .from('loads')
+      .select('*, profiles:owner_id(full_name, phone, avatar_url)') 
+      .eq('status', 'available')
+      .order('created_at', { ascending: false });
+      
+    if (error) throw error;
+    return data;
+  },
 
-  useEffect(() => { fetchLoads(); }, []);
+  async getLoadById(id: string) {
+    const { data, error } = await supabase
+      .from('loads')
+      .select('*, profiles:owner_id(full_name, phone)')
+      .eq('id', id)
+      .maybeSingle();
+    if (error) throw error;
+    return data;
+  },
 
-  const handleAccept = async (loadId: string) => {
-    if (!userProfile?.id) return;
-    try {
-      await api.acceptLoad(loadId, userProfile.id);
-      toast.success(t('success'));
-      fetchLoads();
-    } catch (err: any) {
-      toast.error(err.message);
-    }
-  };
+  async getUserLoads(userId: string) {
+    const { data, error } = await supabase
+      .from('loads')
+      .select('*')
+      .or(`owner_id.eq.${userId},driver_id.eq.${userId}`)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return data;
+  },
 
-  const handleBid = async () => {
-    if (!userProfile?.id || !bidLoadId) return;
-    setSubmitting(true);
-    try {
-      await api.submitBid(bidLoadId, userProfile.id, parseFloat(bidPrice), bidMsg);
-      toast.success(t('success'));
-      setBidLoadId(null);
-      setBidPrice('');
-      setBidMsg('');
-    } catch (err: any) {
-      toast.error(err.message);
-    } finally {
-      setSubmitting(false);
-    }
-  };
+// ... (الدوال الأخرى acceptLoad, updateLoadStatus, cancelLoad, submitBid, getLoadBids, etc تبقى كما هي)
 
-  const filtered = loads.filter(l =>
-    l.origin.toLowerCase().includes(search.toLowerCase()) ||
-    l.destination.toLowerCase().includes(search.toLowerCase())
-  );
+  // ==========================================
+  // Admin (تعديل استعلامات الأدمن)
+  // ==========================================
+  async getAdminStats(): Promise<AdminStats> {
+    const { count: users } = await supabase.from('profiles').select('*', { count: 'exact', head: true });
+    const { count: drivers } = await supabase.from('user_roles').select('*', { count: 'exact', head: true }).eq('role', 'driver');
+    const { count: shippers } = await supabase.from('user_roles').select('*', { count: 'exact', head: true }).eq('role', 'shipper');
+    const { count: activeLoads } = await supabase.from('loads').select('*', { count: 'exact', head: true }).in('status', ['available', 'in_progress']);
+    const { count: completed } = await supabase.from('loads').select('*', { count: 'exact', head: true }).eq('status', 'completed');
 
-  return (
-    <AppLayout>
-      <div className="space-y-4">
-        <div className="relative">
-          <Search className="absolute start-3 top-1/2 -translate-y-1/2 text-muted-foreground" size={18} />
-          <Input
-            placeholder={t('search')}
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            className="ps-10"
-          />
-        </div>
+    return {
+      totalUsers: users || 0,
+      totalDrivers: drivers || 0,
+      totalShippers: shippers || 0,
+      activeLoads: activeLoads || 0,
+      completedTrips: completed || 0,
+    };
+  },
 
-        {loading ? (
-          <div className="flex justify-center py-12"><Loader2 className="animate-spin text-primary" size={32} /></div>
-        ) : filtered.length === 0 ? (
-          <div className="text-center py-12 text-muted-foreground">{t('no_data')}</div>
-        ) : (
-          <div className="grid gap-4">
-            {filtered.map(load => (
-              <Card key={load.id} className="hover:shadow-lg transition-shadow">
-                <CardContent className="p-5">
-                  <div className="flex items-start justify-between mb-3">
-                    <div className="flex items-center gap-2">
-                      <Badge className={statusColors[load.status]}>{t(load.status)}</Badge>
-                      {load.type && <span className="text-xs text-muted-foreground">{load.type}</span>}
-                    </div>
-                    <span className="text-sm text-muted-foreground">{new Date(load.created_at).toLocaleDateString('ar')}</span>
-                  </div>
+  // تعديل لجلب الأدوار مع المستخدمين
+  async getAllUsers() {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*, user_roles(role)') // هنا نجلب الدور من جدول user_roles
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return data;
+  },
 
-                  <div className="flex items-center gap-2 mb-2">
-                    <MapPin size={16} className="text-accent shrink-0" />
-                    <span className="text-sm">{load.origin} → {load.destination}</span>
-                  </div>
+  // تعديل لجلب اسم صاحب الشحنة في لوحة الأدمن
+  async getAllLoads() {
+    const { data, error } = await supabase
+      .from('loads')
+      .select('*, profiles:owner_id(full_name)') // نجلب اسم المالك
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return data;
+  },
 
-                  <div className="flex flex-wrap gap-4 text-sm text-muted-foreground mb-4">
-                    <div className="flex items-center gap-1"><Weight size={14} /> {load.weight} طن</div>
-                    <div className="flex items-center gap-1"><DollarSign size={14} /> {load.price} ر.س</div>
-                    {load.profiles?.full_name && <span>المرسل: {load.profiles.full_name}</span>}
-                  </div>
+  // تعديل لجلب اسم صاحب التذكرة
+  async getTickets() {
+    const { data, error } = await supabase
+      .from('support_tickets')
+      .select('*, profiles:user_id(full_name, email)') // نجلب بيانات المستخدم
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return data;
+  },
 
-                  <div className="flex gap-2">
-                    <Button size="sm" onClick={() => handleAccept(load.id)}>{t('accept_load')}</Button>
-                    <Dialog open={bidLoadId === load.id} onOpenChange={open => !open && setBidLoadId(null)}>
-                      <DialogTrigger asChild>
-                        <Button size="sm" variant="outline" onClick={() => setBidLoadId(load.id)}>{t('submit_bid')}</Button>
-                      </DialogTrigger>
-                      <DialogContent>
-                        <DialogHeader><DialogTitle>{t('submit_bid')}</DialogTitle></DialogHeader>
-                        <div className="space-y-4">
-                          <div>
-                            <Label>{t('bid_price')}</Label>
-                            <Input type="number" value={bidPrice} onChange={e => setBidPrice(e.target.value)} dir="ltr" className="mt-1" />
-                          </div>
-                          <div>
-                            <Label>{t('messages')}</Label>
-                            <Textarea value={bidMsg} onChange={e => setBidMsg(e.target.value)} className="mt-1" />
-                          </div>
-                          <Button onClick={handleBid} disabled={submitting} className="w-full">
-                            {submitting ? <Loader2 className="animate-spin" /> : t('submit')}
-                          </Button>
-                        </div>
-                      </DialogContent>
-                    </Dialog>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        )}
-      </div>
-    </AppLayout>
-  );
-}
+// ... باقي الملف
