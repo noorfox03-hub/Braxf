@@ -1,5 +1,3 @@
-// src/pages/driver/DriverLoads.tsx
-
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/hooks/useAuth';
