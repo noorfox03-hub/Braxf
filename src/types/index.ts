@@ -14,8 +14,8 @@ export interface UserProfile {
   avatar_url?: string;
   created_at: string;
   updated_at: string;
-  // إضافة هذا السطر للوحة تحكم الأدمن
-  user_roles?: { role: UserRole }[]; 
+  // للحصول على الدور في لوحة الأدمن
+  user_roles?: { role: UserRole }[];
 }
 
 export interface Load {
@@ -45,15 +45,14 @@ export interface Load {
   status: LoadStatus;
   created_at: string;
   updated_at: string;
-  // هذا هو التعديل الأهم: إضافة بيانات صاحب الشحنة
+  // بيانات صاحب الشحنة (هام جداً)
   profiles?: { 
     full_name: string; 
     phone: string; 
     avatar_url?: string;
-  }; 
+  };
 }
 
-// ... باقي الأنواع كما هي (Truck, SubDriver, etc)
 export interface Truck {
   id: string;
   owner_id: string;
@@ -96,8 +95,7 @@ export interface SupportTicket {
   assigned_to?: string;
   created_at: string;
   updated_at: string;
-  // إضافة بيانات المستخدم للتذكرة
-  profiles?: { full_name: string; email: string }; 
+  profiles?: { full_name: string; email: string };
 }
 
 export interface Product {
