@@ -105,7 +105,6 @@ export const api = {
   // Drivers & Trucks (السائقين والشاحنات)
   // ==========================================
   
-  // دالة جلب جميع السائقين مع بياناتهم الشخصية (لأصحاب الحمولات)
   async getAllDrivers() {
     const { data, error } = await supabase
       .from('driver_details')
@@ -117,28 +116,21 @@ export const api = {
           avatar_url,
           email
         )
-      `); // تم التعديل هنا لضمان جلب البيانات بشكل صحيح
+      `);
     if (error) throw error;
     return data;
   },
 
-  // دالة جلب السائقين الفرعيين
   async getAllSubDrivers() {
-    const { data, error } = await supabase
-      .from('sub_drivers')
-      .select('*');
+    const { data, error } = await supabase.from('sub_drivers').select('*');
     if (error) throw error;
     return data;
   },
 
   async addTruck(truckData: any, userId: string) {
     const { error } = await supabase.from('trucks').insert([{
-      owner_id: userId, 
-      plate_number: truckData.plate_number, 
-      brand: truckData.brand,
-      model_year: truckData.model_year, 
-      truck_type: truckData.truck_type, 
-      capacity: truckData.capacity,
+      owner_id: userId, plate_number: truckData.plate_number, brand: truckData.brand,
+      model_year: truckData.model_year, truck_type: truckData.truck_type, capacity: truckData.capacity,
     }]);
     if (error) throw error;
   },
@@ -156,10 +148,8 @@ export const api = {
 
   async addSubDriver(driverData: any, carrierId: string) {
     const { error } = await supabase.from('sub_drivers').insert([{
-      carrier_id: carrierId, 
-      driver_name: driverData.driver_name,
-      driver_phone: driverData.driver_phone, 
-      id_number: driverData.id_number,
+      carrier_id: carrierId, driver_name: driverData.driver_name,
+      driver_phone: driverData.driver_phone, id_number: driverData.id_number,
       license_number: driverData.license_number,
     }]);
     if (error) throw error;
@@ -181,25 +171,15 @@ export const api = {
   // ==========================================
   async postLoad(loadData: any, userId: string) {
     const { error } = await supabase.from('loads').insert([{
-      owner_id: userId, 
-      origin: loadData.origin, 
-      destination: loadData.destination,
-      weight: parseFloat(loadData.weight) || 0, 
-      price: parseFloat(loadData.price) || 0,
-      truck_size: loadData.truck_size, 
-      body_type: loadData.body_type,
-      description: loadData.description || '', 
-      type: loadData.type || 'general',
-      package_type: loadData.package_type, 
-      pickup_date: loadData.pickup_date,
-      receiver_name: loadData.receiver_name, 
-      receiver_phone: loadData.receiver_phone,
-      receiver_address: loadData.receiver_address, 
-      status: 'available',
-      origin_lat: loadData.origin_lat, 
-      origin_lng: loadData.origin_lng,
-      dest_lat: loadData.dest_lat, 
-      dest_lng: loadData.dest_lng,
+      owner_id: userId, origin: loadData.origin, destination: loadData.destination,
+      weight: parseFloat(loadData.weight) || 0, price: parseFloat(loadData.price) || 0,
+      truck_size: loadData.truck_size, body_type: loadData.body_type,
+      description: loadData.description || '', type: loadData.type || 'general',
+      package_type: loadData.package_type, pickup_date: loadData.pickup_date,
+      receiver_name: loadData.receiver_name, receiver_phone: loadData.receiver_phone,
+      receiver_address: loadData.receiver_address, status: 'available',
+      origin_lat: loadData.origin_lat, origin_lng: loadData.origin_lng,
+      dest_lat: loadData.dest_lat, dest_lng: loadData.dest_lng,
       distance: loadData.distance
     }]);
     if (error) throw error;
@@ -215,8 +195,14 @@ export const api = {
     return data;
   },
 
-  async getLoadById(id: string) {
-    const { data, error } = await supabase.from('loads').select('*, profiles:owner_id(full_name, phone)').eq('id', id).maybeSingle();
+  async getOtherLoadsByOwner(ownerId: string, currentLoadId: string) {
+    const { data, error } = await supabase
+      .from('loads')
+      .select('*')
+      .eq('owner_id', ownerId)
+      .neq('id', currentLoadId)
+      .eq('status', 'available')
+      .limit(5);
     if (error) throw error;
     return data;
   },
@@ -230,6 +216,16 @@ export const api = {
 
   async acceptLoad(loadId: string, driverId: string) {
     const { error } = await supabase.from('loads').update({ status: 'in_progress', driver_id: driverId }).eq('id', loadId);
+    if (error) throw error;
+  },
+
+  async cancelLoadAssignment(loadId: string) {
+    const { error } = await supabase.from('loads').update({ status: 'available', driver_id: null }).eq('id', loadId);
+    if (error) throw error;
+  },
+
+  async deleteLoad(loadId: string) {
+    const { error } = await supabase.from('loads').delete().eq('id', loadId);
     if (error) throw error;
   },
 
@@ -274,28 +270,19 @@ export const api = {
   },
 
   async getAllUsers() {
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('*, user_roles(role)')
-      .order('created_at', { ascending: false });
+    const { data, error } = await supabase.from('profiles').select('*, user_roles(role)').order('created_at', { ascending: false });
     if (error) throw error;
     return data;
   },
 
   async getAllLoads() {
-    const { data, error } = await supabase
-      .from('loads')
-      .select('*, profiles:owner_id(full_name)')
-      .order('created_at', { ascending: false });
+    const { data, error } = await supabase.from('loads').select('*, profiles:owner_id(full_name)').order('created_at', { ascending: false });
     if (error) throw error;
     return data;
   },
 
   async getTickets() {
-    const { data, error } = await supabase
-      .from('support_tickets')
-      .select('*, profiles:user_id(full_name, email)')
-      .order('created_at', { ascending: false });
+    const { data, error } = await supabase.from('support_tickets').select('*, profiles:user_id(full_name, email)').order('created_at', { ascending: false });
     if (error) throw error;
     return data;
   },
