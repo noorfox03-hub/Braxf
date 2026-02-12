@@ -5,7 +5,7 @@ import { UserProfile, Load, AdminStats, UserRole } from '@/types';
 
 export const api = {
   // ==========================================
-  // Auth
+  // Auth (المصادقة والحساب)
   // ==========================================
   async registerUser(email: string, password: string, metadata: { full_name: string; phone: string; role: UserRole }) {
     const { data, error } = await supabase.auth.signUp({
@@ -54,7 +54,12 @@ export const api = {
       .eq('user_id', data.user.id)
       .maybeSingle();
 
-    return { session: data.session, user: data.user, profile: profile as UserProfile, role: roleData?.role as UserRole };
+    return { 
+        session: data.session, 
+        user: data.user, 
+        profile: profile as UserProfile, 
+        role: roleData?.role as UserRole 
+    };
   },
 
   async loginAdmin(email: string, password: string) {
@@ -97,12 +102,34 @@ export const api = {
   },
 
   // ==========================================
-  // Driver & Trucks
+  // Drivers & Trucks (السائقين والشاحنات)
   // ==========================================
+  
+  // دالة جلب جميع السائقين مع بياناتهم الشخصية (لأصحاب الحمولات)
+  async getAllDrivers() {
+    const { data, error } = await supabase
+      .from('driver_details')
+      .select(`
+        *,
+        profiles:id (
+          full_name,
+          phone,
+          avatar_url,
+          email
+        )
+      `);
+    if (error) throw error;
+    return data;
+  },
+
   async addTruck(truckData: any, userId: string) {
     const { error } = await supabase.from('trucks').insert([{
-      owner_id: userId, plate_number: truckData.plate_number, brand: truckData.brand,
-      model_year: truckData.model_year, truck_type: truckData.truck_type, capacity: truckData.capacity,
+      owner_id: userId, 
+      plate_number: truckData.plate_number, 
+      brand: truckData.brand,
+      model_year: truckData.model_year, 
+      truck_type: truckData.truck_type, 
+      capacity: truckData.capacity,
     }]);
     if (error) throw error;
   },
@@ -120,8 +147,10 @@ export const api = {
 
   async addSubDriver(driverData: any, carrierId: string) {
     const { error } = await supabase.from('sub_drivers').insert([{
-      carrier_id: carrierId, driver_name: driverData.driver_name,
-      driver_phone: driverData.driver_phone, id_number: driverData.id_number,
+      carrier_id: carrierId, 
+      driver_name: driverData.driver_name,
+      driver_phone: driverData.driver_phone, 
+      id_number: driverData.id_number,
       license_number: driverData.license_number,
     }]);
     if (error) throw error;
@@ -139,27 +168,35 @@ export const api = {
   },
 
   // ==========================================
-  // Loads (تم التعديل لجلب بيانات صاحب الشحنة)
+  // Loads (الشحنات والحمولات)
   // ==========================================
   async postLoad(loadData: any, userId: string) {
     const { error } = await supabase.from('loads').insert([{
-      owner_id: userId, origin: loadData.origin, destination: loadData.destination,
-      weight: parseFloat(loadData.weight) || 0, price: parseFloat(loadData.price) || 0,
-      truck_size: loadData.truck_size, body_type: loadData.body_type,
-      description: loadData.description || '', type: loadData.type || 'general',
-      package_type: loadData.package_type, pickup_date: loadData.pickup_date,
-      receiver_name: loadData.receiver_name, receiver_phone: loadData.receiver_phone,
-      receiver_address: loadData.receiver_address, status: 'available',
-      // إضافة الحقول الناقصة إذا لزم الأمر
-      origin_lat: loadData.origin_lat, origin_lng: loadData.origin_lng,
-      dest_lat: loadData.dest_lat, dest_lng: loadData.dest_lng,
+      owner_id: userId, 
+      origin: loadData.origin, 
+      destination: loadData.destination,
+      weight: parseFloat(loadData.weight) || 0, 
+      price: parseFloat(loadData.price) || 0,
+      truck_size: loadData.truck_size, 
+      body_type: loadData.body_type,
+      description: loadData.description || '', 
+      type: loadData.type || 'general',
+      package_type: loadData.package_type, 
+      pickup_date: loadData.pickup_date,
+      receiver_name: loadData.receiver_name, 
+      receiver_phone: loadData.receiver_phone,
+      receiver_address: loadData.receiver_address, 
+      status: 'available',
+      origin_lat: loadData.origin_lat, 
+      origin_lng: loadData.origin_lng,
+      dest_lat: loadData.dest_lat, 
+      dest_lng: loadData.dest_lng,
       distance: loadData.distance
     }]);
     if (error) throw error;
   },
 
   async getAvailableLoads() {
-    // جلب اسم صاحب الشحنة ورقم هاتفه
     const { data, error } = await supabase
       .from('loads')
       .select('*, profiles:owner_id(full_name, phone, avatar_url)') 
@@ -193,7 +230,7 @@ export const api = {
   },
 
   // ==========================================
-  // Stats & Admin (تم التعديل لجلب البيانات الكاملة)
+  // Stats & Admin (الإحصائيات والإدارة)
   // ==========================================
   async getDriverStats(userId: string) {
     const { count: active } = await supabase.from('loads').select('*', { count: 'exact', head: true })
@@ -228,7 +265,6 @@ export const api = {
   },
 
   async getAllUsers() {
-    // جلب الأدوار مع المستخدمين
     const { data, error } = await supabase
       .from('profiles')
       .select('*, user_roles(role)')
@@ -238,7 +274,6 @@ export const api = {
   },
 
   async getAllLoads() {
-    // جلب اسم صاحب الشحنة للأدمن
     const { data, error } = await supabase
       .from('loads')
       .select('*, profiles:owner_id(full_name)')
