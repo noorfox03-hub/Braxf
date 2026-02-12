@@ -2,43 +2,27 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/hooks/useAuth';
 import { api } from '@/services/api';
+import { supabase } from '@/integrations/supabase/client'; // استيراد العميل للـ Realtime
 import AppLayout from '@/components/AppLayout';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
-import { toast } from 'sonner';
-import { MapPin, Weight, DollarSign, Loader2, Search, User } from 'lucide-react';
+import { Loader2, MapPin, Weight, DollarSign, User } from 'lucide-react';
 import { Load } from '@/types';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-
-const statusColors: Record<string, string> = {
-  available: 'bg-green-100 text-green-700 border-green-200',
-  pending: 'bg-yellow-100 text-yellow-700 border-yellow-200',
-  in_progress: 'bg-blue-100 text-blue-700 border-blue-200',
-  completed: 'bg-gray-100 text-gray-700 border-gray-200',
-  cancelled: 'bg-red-100 text-red-700 border-red-200',
-};
+import { toast } from 'sonner';
 
 export default function DriverLoads() {
   const { t } = useTranslation();
   const { userProfile } = useAuth();
   const [loads, setLoads] = useState<Load[]>([]);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
-  const [bidLoadId, setBidLoadId] = useState<string | null>(null);
-  const [bidPrice, setBidPrice] = useState('');
-  const [bidMsg, setBidMsg] = useState('');
-  const [submitting, setSubmitting] = useState(false);
 
+  // دالة جلب البيانات باستخدام الـ api.ts الخاص بك
   const fetchLoads = async () => {
     try {
       const data = await api.getAvailableLoads();
-      // فلترة الشحنات لإخفاء شحنات المستخدم نفسه
-      const otherLoads = (data as Load[]).filter(l => l.owner_id !== userProfile?.id);
-      setLoads(otherLoads);
+      // ملاحظة: لكي تظهر لك شحناتك أثناء التجربة، احذف فلتر (owner_id !== userProfile?.id)
+      setLoads(data as any[]);
     } catch (err) {
       console.error(err);
     } finally {
@@ -46,129 +30,80 @@ export default function DriverLoads() {
     }
   };
 
-  useEffect(() => { fetchLoads(); }, [userProfile]);
+  useEffect(() => {
+    fetchLoads();
 
-  const handleAccept = async (loadId: string) => {
-    if (!userProfile?.id) return;
-    try {
-      await api.acceptLoad(loadId, userProfile.id);
-      toast.success(t('success'));
-      fetchLoads();
-    } catch (err: any) {
-      toast.error(err.message);
-    }
-  };
+    // إعداد التحديث الفوري
+    const channel = supabase
+      .channel('public:loads')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'loads' },
+        (payload) => {
+          console.log('تغيير في قاعدة البيانات:', payload);
+          fetchLoads(); // إعادة جلب البيانات فوراً عند أي تغيير
+        }
+      )
+      .subscribe();
 
-  const handleBid = async () => {
-    if (!userProfile?.id || !bidLoadId) return;
-    setSubmitting(true);
-    try {
-      await api.submitBid(bidLoadId, userProfile.id, parseFloat(bidPrice), bidMsg);
-      toast.success(t('success'));
-      setBidLoadId(null);
-      setBidPrice('');
-      setBidMsg('');
-    } catch (err: any) {
-      toast.error(err.message);
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const filtered = loads.filter(l =>
-    l.origin.toLowerCase().includes(search.toLowerCase()) ||
-    l.destination.toLowerCase().includes(search.toLowerCase())
-  );
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
 
   return (
     <AppLayout>
       <div className="space-y-4">
-        <div className="relative">
-          <Search className="absolute start-3 top-1/2 -translate-y-1/2 text-muted-foreground" size={18} />
-          <Input
-            placeholder={t('search')}
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            className="ps-10"
-          />
+        <div className="flex justify-between items-center">
+            <h2 className="text-xl font-bold">الشحنات المتاحة</h2>
+            <div className="flex items-center gap-2 text-xs text-green-600 bg-green-50 px-2 py-1 rounded-full border border-green-200">
+                <span className="relative flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+                </span>
+                تحديث مباشر
+            </div>
         </div>
 
         {loading ? (
           <div className="flex justify-center py-12"><Loader2 className="animate-spin text-primary" size={32} /></div>
-        ) : filtered.length === 0 ? (
-          <div className="text-center py-12 text-muted-foreground">{t('no_data')}</div>
+        ) : loads.length === 0 ? (
+          <div className="text-center py-12 border-2 border-dashed rounded-xl text-muted-foreground">
+            لا توجد شحنات متاحة حالياً
+          </div>
         ) : (
           <div className="grid gap-4">
-            {filtered.map(load => (
-              <Card key={load.id} className="hover:shadow-lg transition-shadow border-l-4 border-l-primary">
+            {loads.map((load: any) => (
+              <Card key={load.id} className="hover:border-primary transition-colors">
                 <CardContent className="p-5">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 gap-2">
+                  <div className="flex justify-between items-start mb-4">
                     <div className="flex items-center gap-2 text-lg font-bold">
-                      <MapPin size={20} className="text-primary shrink-0" />
-                      <span>{load.origin}</span>
-                      <span className="text-muted-foreground">←</span>
-                      <span>{load.destination}</span>
+                      <MapPin className="text-primary" size={18} />
+                      {load.origin} ← {load.destination}
                     </div>
-                    <Badge className={statusColors[load.status] || 'bg-gray-100'}>{t(load.status)}</Badge>
+                    <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">متاحة</Badge>
                   </div>
-
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4 text-sm">
-                    <div className="flex flex-col">
-                      <span className="text-muted-foreground text-xs">{t('weight')}</span>
-                      <span className="font-semibold flex items-center gap-1"><Weight size={14} /> {load.weight} طن</span>
+                  
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm mb-4">
+                    <div>
+                      <p className="text-muted-foreground text-xs">الوزن</p>
+                      <p className="font-semibold flex items-center gap-1"><Weight size={14}/> {load.weight} طن</p>
                     </div>
-                    <div className="flex flex-col">
-                      <span className="text-muted-foreground text-xs">{t('price')}</span>
-                      <span className="font-semibold text-green-600 flex items-center gap-1"><DollarSign size={14} /> {load.price} ر.س</span>
+                    <div>
+                      <p className="text-muted-foreground text-xs">السعر</p>
+                      <p className="font-bold text-green-600 flex items-center gap-1"><DollarSign size={14}/> {load.price} ر.س</p>
                     </div>
-                    <div className="flex flex-col">
-                      <span className="text-muted-foreground text-xs">{t('pickup_date')}</span>
-                      <span className="font-semibold">{load.pickup_date || '-'}</span>
-                    </div>
-                    <div className="flex flex-col">
-                      <span className="text-muted-foreground text-xs">صاحب الشحنة</span>
-                      <span className="font-semibold flex items-center gap-1 text-primary">
-                        <User size={14} /> 
-                        {load.profiles?.full_name || 'غير معروف'}
-                      </span>
+                    <div>
+                      <p className="text-muted-foreground text-xs">الشاحن</p>
+                      <p className="font-semibold flex items-center gap-1 text-primary">
+                        <User size={14}/> {load.profiles?.full_name || 'غير معروف'}
+                      </p>
                     </div>
                   </div>
-
-                  {load.description && (
-                    <div className="bg-muted/30 p-3 rounded-md text-sm text-muted-foreground mb-4">
-                      {load.description}
-                    </div>
-                  )}
-
-                  <div className="flex gap-3 mt-2">
-                    <Button className="flex-1 bg-primary hover:bg-primary/90" onClick={() => handleAccept(load.id)}>
-                      {t('accept_load')}
-                    </Button>
-                    
-                    <Dialog open={bidLoadId === load.id} onOpenChange={open => !open && setBidLoadId(null)}>
-                      <DialogTrigger asChild>
-                        <Button className="flex-1" variant="outline" onClick={() => setBidLoadId(load.id)}>
-                          {t('submit_bid')}
-                        </Button>
-                      </DialogTrigger>
-                      <DialogContent>
-                        <DialogHeader><DialogTitle>{t('submit_bid')}</DialogTitle></DialogHeader>
-                        <div className="space-y-4 pt-4">
-                          <div>
-                            <Label>{t('bid_price')}</Label>
-                            <Input type="number" value={bidPrice} onChange={e => setBidPrice(e.target.value)} dir="ltr" className="mt-1" />
-                          </div>
-                          <div>
-                            <Label>ملاحظات</Label>
-                            <Textarea value={bidMsg} onChange={e => setBidMsg(e.target.value)} className="mt-1" placeholder="اكتب عرضك هنا..." />
-                          </div>
-                          <Button onClick={handleBid} disabled={submitting} className="w-full">
-                            {submitting ? <Loader2 className="animate-spin" /> : t('submit')}
-                          </Button>
-                        </div>
-                      </DialogContent>
-                    </Dialog>
-                  </div>
+                  
+                  <Button className="w-full" onClick={() => toast.info("قريباً: تقديم عرض سعر")}>
+                    قبول الشحنة / تقديم عرض
+                  </Button>
                 </CardContent>
               </Card>
             ))}
