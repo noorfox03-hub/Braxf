@@ -1,11 +1,11 @@
 import { useAuth } from '@/hooks/useAuth';
-import { Navigate, Outlet } from 'react-router-dom';
+import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 
 export default function ProtectedRoute() {
-  const { isAuthenticated, loading } = useAuth();
+  const { isAuthenticated, loading, currentRole } = useAuth();
+  const location = useLocation();
 
-  // 1. طول ما هو بيحمل، اعرض شاشة تحميل (عشان ما يعملش ريفرش ويرميك بره)
   if (loading) {
     return (
       <div className="flex h-screen w-full items-center justify-center bg-background">
@@ -14,11 +14,19 @@ export default function ProtectedRoute() {
     );
   }
 
-  // 2. لو خلص تحميل ومفيش مستخدم، وديه لصفحة الدخول
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />;
   }
 
-  // 3. لو مسجل دخول، اعرض الصفحة المطلوبة (نفس الصفحة اللي هو فيها)
+  // توجيه ذكي: إذا حاول السائق دخول صفحات الشاحن (shipper) يتم إرجاعه للوحة تحكمه
+  if (currentRole === 'driver' && location.pathname.startsWith('/shipper')) {
+    return <Navigate to="/driver/dashboard" replace />;
+  }
+  
+  // إذا حاول الشاحن دخول صفحات السائق يتم إرجاعه
+  if (currentRole === 'shipper' && location.pathname.startsWith('/driver')) {
+    return <Navigate to="/shipper/dashboard" replace />;
+  }
+
   return <Outlet />;
 }
