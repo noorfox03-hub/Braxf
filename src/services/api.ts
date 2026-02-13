@@ -11,12 +11,61 @@ export const api = {
     return { session: data.session, user: data.user, profile: profile as UserProfile, role: roleData?.role as UserRole };
   },
 
+  // الدالة التي كانت مفقودة وتسببت في الخطأ
+  async registerUser(email: string, password: string, metadata: { full_name: string, phone: string, role: UserRole }) {
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: {
+          full_name: metadata.full_name,
+          phone: metadata.phone,
+          role: metadata.role
+        }
+      }
+    });
+    if (error) throw error;
+    return data;
+  },
+
+  async verifyEmailOtp(email: string, token: string) {
+    const { data, error } = await supabase.auth.verifyOtp({
+      email,
+      token,
+      type: 'signup'
+    });
+    if (error) throw error;
+    return data;
+  },
+
+  async resendOtp(email: string) {
+    const { error } = await supabase.auth.resend({
+      type: 'signup',
+      email: email
+    });
+    if (error) throw error;
+  },
+
+  async forgotPassword(email: string) {
+    const { error } = await supabase.auth.resetPasswordForEmail(email);
+    if (error) throw error;
+  },
+
+  async loginAdmin(email: string, password: string) {
+    // تسجيل دخول الأدمن (يتطلب أن يكون للمستخدم دور admin في جدول user_roles)
+    const result = await this.loginByEmail(email, password);
+    if (result.role !== 'admin') {
+      throw new Error("ليس لديك صلاحيات الوصول للإدارة");
+    }
+    return result;
+  },
+
   async updateProfile(userId: string, updates: any) {
     const { error } = await supabase.from('profiles').update(updates).eq('id', userId);
     if (error) throw error;
   },
 
-  // --- Storage (رفع الصور) ---
+  // --- Storage ---
   async uploadFile(path: string, file: File) {
     const { data, error } = await supabase.storage.from('documents').upload(path, file, { upsert: true });
     if (error) throw error;
@@ -47,12 +96,6 @@ export const api = {
     return data;
   },
 
-  async getOtherLoadsByOwner(ownerId: string, currentLoadId: string) {
-    const { data, error } = await supabase.from('loads').select('*').eq('owner_id', ownerId).neq('id', currentLoadId).eq('status', 'available').limit(5);
-    if (error) throw error;
-    return data;
-  },
-
   async acceptLoad(loadId: string, driverId: string) {
     const { error } = await supabase.from('loads').update({ status: 'in_progress', driver_id: driverId }).eq('id', loadId);
     if (error) throw error;
@@ -68,18 +111,54 @@ export const api = {
     if (error) throw error;
   },
 
-  async deleteLoad(loadId: string) {
-    const { error } = await supabase.from('loads').delete().eq('id', loadId);
-    if (error) throw error;
-  },
-
   async getUserLoads(userId: string) {
     const { data, error } = await supabase.from('loads').select('*').or(`owner_id.eq.${userId},driver_id.eq.${userId}`).order('created_at', { ascending: false });
     if (error) throw error;
     return data;
   },
 
-  // --- Notifications ---
+  // --- إدارة الشاحنات (كانت ناقصة أيضاً) ---
+  async getTrucks(ownerId: string) {
+    const { data, error } = await supabase.from('trucks').select('*').eq('owner_id', ownerId);
+    if (error) throw error;
+    return data;
+  },
+
+  async addTruck(truckData: any, ownerId: string) {
+    const { error } = await supabase.from('trucks').insert([{ ...truckData, owner_id: ownerId }]);
+    if (error) throw error;
+  },
+
+  async deleteTruck(id: string) {
+    const { error } = await supabase.from('trucks').delete().eq('id', id);
+    if (error) throw error;
+  },
+
+  // --- إدارة السائقين الفرعيين ---
+  async getSubDrivers(carrierId: string) {
+    const { data, error } = await supabase.from('sub_drivers').select('*').eq('carrier_id', carrierId);
+    if (error) throw error;
+    return data;
+  },
+
+  async addSubDriver(driverData: any, carrierId: string) {
+    const { error } = await supabase.from('sub_drivers').insert([{ ...driverData, carrier_id: carrierId }]);
+    if (error) throw error;
+  },
+
+  async deleteSubDriver(id: string) {
+    const { error } = await supabase.from('sub_drivers').delete().eq('id', id);
+    if (error) throw error;
+  },
+
+  // --- تذاكر الدعم الفني ---
+  async getTickets() {
+    const { data, error } = await supabase.from('support_tickets').select('*, profiles:user_id(full_name, email)').order('created_at', { ascending: false });
+    if (error) throw error;
+    return data;
+  },
+
+  // --- الإشعارات ---
   async sendNotification(userId: string, title: string, message: string) {
     await supabase.from('notifications').insert([{ user_id: userId, title, message }]);
   },
@@ -94,26 +173,14 @@ export const api = {
     await supabase.from('notifications').update({ is_read: true }).eq('user_id', userId);
   },
 
-  // --- Drivers ---
+  // --- Drivers List ---
   async getAllDrivers() {
     const { data, error } = await supabase.from('driver_details').select('*, profiles(full_name, phone, email, avatar_url)');
     if (error) throw error;
     return data;
   },
 
-  async getAllSubDrivers() {
-    const { data, error } = await supabase.from('sub_drivers').select('*');
-    if (error) throw error;
-    return data;
-  },
-
-  // --- Stats ---
-  async getShipperStats(userId: string) {
-    const { count: active } = await supabase.from('loads').select('*', { count: 'exact', head: true }).eq('owner_id', userId).in('status', ['available', 'in_progress']);
-    const { count: completed } = await supabase.from('loads').select('*', { count: 'exact', head: true }).eq('owner_id', userId).eq('status', 'completed');
-    return { activeLoads: active || 0, completedTrips: completed || 0 };
-  },
-
+  // --- Stats & Admin ---
   async getDriverStats(userId: string) {
     const { count: active } = await supabase.from('loads').select('*', { count: 'exact', head: true }).eq('driver_id', userId).eq('status', 'in_progress');
     const { count: completed } = await supabase.from('loads').select('*', { count: 'exact', head: true }).eq('driver_id', userId).eq('status', 'completed');
